@@ -34,6 +34,9 @@ class MCPIntegration {
     try {
       console.log('🔌 Initializing MCP Docker gateway...');
       
+      // Always set up tool mappings
+      this.setupToolMappings();
+      
       // Try to connect to Docker Bridge server first
       const bridgeAvailable = await this.checkDockerBridge();
       
@@ -75,7 +78,7 @@ class MCPIntegration {
    */
   async checkDockerBridge() {
     try {
-      const response = await fetch('http://localhost:3000/api/mcp/servers', {
+      const response = await fetch(`${window.location.origin}/api/mcp/servers`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -90,7 +93,7 @@ class MCPIntegration {
    */
   async loadDockerServers() {
     try {
-      const response = await fetch('http://localhost:3000/api/mcp/servers');
+      const response = await fetch(`${window.location.origin}/api/mcp/servers`);
       const data = await response.json();
       
       if (data.servers && data.servers.length > 0) {
@@ -133,8 +136,14 @@ class MCPIntegration {
    */
   setupSimulationMode() {
     console.log('🎭 MCP running in simulation mode');
-    
-    // Define simulated MCP capabilities
+    this.setupToolMappings();
+  }
+
+  /**
+   * Setup tool mappings (used by both simulation and real modes)
+   */
+  setupToolMappings() {
+    // Define MCP tool implementations
     this.simulatedTools = {
       'create_entities': this.simulateCreateEntities.bind(this),
       'read_graph': this.simulateReadGraph.bind(this),
@@ -222,9 +231,22 @@ class MCPIntegration {
    * Call remote MCP tool (placeholder for server implementation)
    */
   async callRemoteTool(toolName, params, requestId) {
-    // This would be implemented on the server side
-    // For now, we'll use simulation
-    return await this.simulateToolCall(toolName, params);
+    try {
+      const response = await fetch(`${window.location.origin}/api/mcp/tool/${toolName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params || {})
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Remote tool error ${response.status}: ${text}`);
+      }
+      const data = await response.json();
+      return data.result || data;
+    } catch (err) {
+      console.error('Remote tool call failed, falling back to simulation:', err.message);
+      return await this.simulateToolCall(toolName, params);
+    }
   }
 
   // ==================== SIMULATED TOOL IMPLEMENTATIONS ====================

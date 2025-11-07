@@ -156,34 +156,129 @@ async function sendMessage() {
 async function sendMessageToGoogleAI(message, apiKey) {
     const systemPrompt = AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.';
     
+    // Define MCP tools for Gemini function calling
+    const tools = [{
+        functionDeclarations: [
+            {
+                name: 'query_graph',
+                description: 'Search the knowledge graph for information. Use this when users ask about their notes, files, or stored information.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'The search query to find in the knowledge graph'
+                        },
+                        entityType: {
+                            type: 'string',
+                            description: 'Optional entity type filter (e.g., "note", "file", "project")'
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Maximum number of results to return (default: 50)'
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            {
+                name: 'read_graph',
+                description: 'Read the entire knowledge graph or a portion of it. Use this to see what information is stored.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        limit: {
+                            type: 'number',
+                            description: 'Maximum number of entities to return (default: 100)'
+                        }
+                    }
+                }
+            },
+            {
+                name: 'create_entities',
+                description: 'Create new entities in the knowledge graph. Use this to store new information, notes, or concepts.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        entities: {
+                            type: 'array',
+                            description: 'Array of entities to create',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    name: { type: 'string', description: 'Name of the entity' },
+                                    entityType: { type: 'string', description: 'Type of entity (e.g., "note", "concept", "project")' },
+                                    observations: { 
+                                        type: 'array', 
+                                        description: 'Array of observation strings about this entity',
+                                        items: { type: 'string' }
+                                    }
+                                },
+                                required: ['name', 'entityType', 'observations']
+                            }
+                        }
+                    },
+                    required: ['entities']
+                }
+            },
+            {
+                name: 'add_observations',
+                description: 'Add observations or notes to existing entities in the knowledge graph.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        observations: {
+                            type: 'array',
+                            description: 'Array of observations to add',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    entityName: { type: 'string', description: 'Name of the entity to add observations to' },
+                                    contents: { 
+                                        type: 'array', 
+                                        description: 'Array of observation content strings',
+                                        items: { type: 'string' }
+                                    }
+                                },
+                                required: ['entityName', 'contents']
+                            }
+                        }
+                    },
+                    required: ['observations']
+                }
+            }
+        ]
+    }];
+    
     // Prepare conversation history for Google AI
     const formattedMessages = [];
     
     // Add system message as first user message
     formattedMessages.push({
         role: 'user',
-        parts: { text: systemPrompt }
+        parts: [{ text: systemPrompt }]
     });
     
     formattedMessages.push({
         role: 'model',
-        parts: { text: 'I understand. I am AURA, your personal assistant. How can I help you today?' }
+        parts: [{ text: 'I understand. I am AURA, your personal assistant. How can I help you today?' }]
     });
     
     // Add conversation history
     for (const msg of conversationHistory) {
         formattedMessages.push({
             role: msg.role === 'assistant' ? 'model' : 'user',
-            parts: { text: msg.content }
+            parts: [{ text: msg.content }]
         });
     }
     
     // Add current message
     formattedMessages.push({
         role: 'user',
-        parts: { text: message }
+        parts: [{ text: message }]
     });
     
+    // Make initial API call with tools
     const response = await fetch(`${GOOGLE_AI_URL}/${DEFAULT_MODEL}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: {
@@ -191,6 +286,7 @@ async function sendMessageToGoogleAI(message, apiKey) {
         },
         body: JSON.stringify({
             contents: formattedMessages,
+            tools: tools,
             generationConfig: {
                 maxOutputTokens: 1000,
                 temperature: 0.7,
@@ -207,30 +303,78 @@ async function sendMessageToGoogleAI(message, apiKey) {
     const data = await response.json();
     
     if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-        const botResponse = data.candidates[0].content.parts[0].text;
+        const candidate = data.candidates[0];
+        const content = candidate.content;
         
-        // Add bot response to chat
-        addMessage(botResponse, 'bot');
-        
-        // Update conversation history
-        conversationHistory.push(
-            { role: 'user', content: message },
-            { role: 'assistant', content: botResponse }
-        );
-        
-        // Add observation to MCP server
-        try {
-            await use_mcp_tool('MCP_DOCKER', 'add_observations', {
-                observations: [{
-                    entityName: 'ChatBot',
-                    contents: [
-                        `User: ${message}`,
-                        `AURA: ${botResponse}`
-                    ]
+        // Check if the model wants to call a function
+        if (content.parts && content.parts[0].functionCall) {
+            const functionCall = content.parts[0].functionCall;
+            console.log('🔧 Function call requested:', functionCall.name, functionCall.args);
+            
+            // Execute the function
+            const functionResult = await executeMCPFunction(functionCall.name, functionCall.args);
+            
+            // Add function call and result to conversation
+            formattedMessages.push({
+                role: 'model',
+                parts: [{ functionCall: functionCall }]
+            });
+            
+            formattedMessages.push({
+                role: 'user',
+                parts: [{
+                    functionResponse: {
+                        name: functionCall.name,
+                        response: functionResult
+                    }
                 }]
             });
-        } catch (mcpError) {
-            console.error('MCP observation failed:', mcpError);
+            
+            // Make another call to get the final response with function results
+            const secondResponse = await fetch(`${GOOGLE_AI_URL}/${DEFAULT_MODEL}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: formattedMessages,
+                    tools: tools,
+                    generationConfig: {
+                        maxOutputTokens: 1000,
+                        temperature: 0.7,
+                        topP: 0.95
+                    }
+                })
+            });
+            
+            if (!secondResponse.ok) {
+                const errorData = await secondResponse.json();
+                throw new Error(errorData.error?.message || `HTTP ${secondResponse.status}: ${secondResponse.statusText}`);
+            }
+            
+            const secondData = await secondResponse.json();
+            const botResponse = secondData.candidates[0].content.parts[0].text;
+            
+            // Add bot response to chat
+            addMessage(botResponse, 'bot');
+            
+            // Update conversation history
+            conversationHistory.push(
+                { role: 'user', content: message },
+                { role: 'assistant', content: botResponse }
+            );
+        } else {
+            // Normal text response
+            const botResponse = content.parts[0].text;
+            
+            // Add bot response to chat
+            addMessage(botResponse, 'bot');
+            
+            // Update conversation history
+            conversationHistory.push(
+                { role: 'user', content: message },
+                { role: 'assistant', content: botResponse }
+            );
         }
         
         // Keep only last 10 exchanges to manage token usage
@@ -239,6 +383,36 @@ async function sendMessageToGoogleAI(message, apiKey) {
         }
     } else {
         throw new Error('Invalid response format from Google AI API');
+    }
+}
+
+// Execute MCP function called by Gemini
+async function executeMCPFunction(functionName, args) {
+    try {
+        console.log(`🎯 Executing MCP function: ${functionName}`, args);
+        
+        const response = await fetch(`http://localhost:8000/api/mcp/tool/${functionName}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(args)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`✅ Function result:`, data);
+        
+        return data.result || data;
+    } catch (error) {
+        console.error(`❌ Function execution error (${functionName}):`, error);
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
