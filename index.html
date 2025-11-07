@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA - Your Personal AI Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>✨ AURA</h1>
+            <p>Advanced Universal Reasoning Assistant • Personal AI</p>
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Ready to help</span>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot-message">
+                <div class="message-content">
+                    <p>Hello! I'm AURA, your personal AI assistant. I'm here to help you with questions, tasks, creative projects, and much more. What would you like to explore today?</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-input-container">
+            <div class="message-section">
+                <textarea 
+                    id="messageInput" 
+                    placeholder="Ask AURA anything - I'm ready to help!" 
+                    rows="3"
+                    class="message-input"
+                ></textarea>
+                <button id="sendButton" class="send-btn">
+                    <span>Send</span>
+                </button>
+            </div>
+            
+            <div class="aura-features">
+                <button class="feature-btn" onclick="showAuraCapabilities()">💡 What can I do?</button>
+                <button class="feature-btn" onclick="clearChat()">🗑️ Clear Chat</button>
+                <button class="feature-btn" onclick="exportChat()">📤 Export Chat</button>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <span>AURA is thinking...</span>
+        </div>
+        
+        <div class="error-message" id="errorMessage" style="display: none;">
+            <p id="errorText"></p>
+            <button id="closeError" class="close-error">&times;</button>
+        </div>
+    </div>
+    
+    <script src="config.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
