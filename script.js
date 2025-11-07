@@ -152,12 +152,80 @@ async function sendMessage() {
     }
 }
 
-// Send message to Google AI API
-async function sendMessageToGoogleAI(message, apiKey) {
-    const systemPrompt = AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.';
+// Global variable to cache tools
+let cachedTools = null;
+let toolsCacheTime = 0;
+const TOOLS_CACHE_TTL = 30000; // 30 seconds
+
+// Helper: Check if specific agent tool exists
+function hasAgentTool(toolName) {
+    if (!cachedTools || !cachedTools[0] || !cachedTools[0].functionDeclarations) {
+        return false;
+    }
+    return cachedTools[0].functionDeclarations.some(t => t.name === toolName);
+}
+
+// Helper: Get preferred tool for a category
+function getPreferredTool(category) {
+    const preferences = {
+        'search_notes': ['agent_Obsidian_simple_search', 'agent_Obsidian_complex_search', 'query_graph'],
+        'read_file': ['agent_Obsidian_get_file_contents', 'agent_Obsidian_batch_get_file_contents'],
+        'browser': ['agent_Puppeteer_navigate', 'agent_Playwright_navigate'],
+        'web_fetch': ['agent_Fetch_fetch', 'agent_Puppeteer_evaluate']
+    };
     
-    // Define MCP tools for Gemini function calling
-    const tools = [{
+    const candidates = preferences[category] || [];
+    for (const tool of candidates) {
+        if (hasAgentTool(tool)) {
+            return tool;
+        }
+    }
+    return null;
+}
+
+// Fetch all available tools (built-in + MCP agents)
+async function fetchAvailableTools() {
+    const now = Date.now();
+    
+    // Return cached tools if still fresh
+    if (cachedTools && (now - toolsCacheTime) < TOOLS_CACHE_TTL) {
+        return cachedTools;
+    }
+    
+    try {
+        const API_BASE = window.location.origin;
+        const response = await fetch(`${API_BASE}/api/tools`);
+        
+        if (!response.ok) {
+            console.warn('Could not fetch dynamic tools, using static set');
+            return getStaticToolDeclarations();
+        }
+        
+        const data = await response.json();
+        const tools = data.tools || [];
+        
+        console.log(`🔧 Loaded ${tools.length} tools dynamically:`, tools.map(t => t.name));
+        
+        // Convert to Gemini format
+        const functionDeclarations = tools.map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters
+        }));
+        
+        cachedTools = [{ functionDeclarations }];
+        toolsCacheTime = now;
+        
+        return cachedTools;
+    } catch (error) {
+        console.error('Error fetching tools:', error);
+        return getStaticToolDeclarations();
+    }
+}
+
+// Static tool declarations (fallback)
+function getStaticToolDeclarations() {
+    return [{
         functionDeclarations: [
             {
                 name: 'query_graph',
@@ -246,9 +314,39 @@ async function sendMessageToGoogleAI(message, apiKey) {
                     },
                     required: ['observations']
                 }
+            },
+            {
+                name: 'agent_command',
+                description: 'Send a command to a discovered agent. Use this to interact with external tools, services, or specialized agents.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        agentId: {
+                            type: 'string',
+                            description: 'The ID or name of the agent to send the command to'
+                        },
+                        command: {
+                            type: 'string',
+                            description: 'The command to execute on the agent'
+                        },
+                        args: {
+                            type: 'object',
+                            description: 'Arguments for the command'
+                        }
+                    },
+                    required: ['agentId', 'command']
+                }
             }
         ]
     }];
+}
+
+// Send message to Google AI API
+async function sendMessageToGoogleAI(message, apiKey) {
+    const systemPrompt = AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.';
+    
+    // Fetch dynamic tools (includes built-in + MCP agents)
+    const tools = await fetchAvailableTools();
     
     // Prepare conversation history for Google AI
     const formattedMessages = [];
@@ -391,7 +489,65 @@ async function executeMCPFunction(functionName, args) {
     try {
         console.log(`🎯 Executing MCP function: ${functionName}`, args);
         
-        const response = await fetch(`http://localhost:8000/api/mcp/tool/${functionName}`, {
+        // Use relative URLs so it works regardless of how the page is served
+        const API_BASE = window.location.origin;
+        
+        // Check if this is an agent tool (format: agent_AgentName_toolName)
+        if (functionName.startsWith('agent_')) {
+            const parts = functionName.split('_');
+            if (parts.length >= 3) {
+                // Extract agentName and toolName
+                const agentName = parts[1];
+                const toolName = parts.slice(2).join('_');
+                
+                console.log(`📡 Routing to agent: ${agentName}, tool: ${toolName}`);
+                
+                const response = await fetch(`${API_BASE}/api/agents/${agentName}/command`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        command: toolName,
+                        args: args
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log(`✅ Agent tool result:`, data);
+                return data.result || data;
+            }
+        }
+        
+        // Handle legacy agent_command format
+        if (functionName === 'agent_command') {
+            const { agentId, command, args: commandArgs = {} } = args;
+            const response = await fetch(`${API_BASE}/api/agents/${agentId}/command`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    command,
+                    args: commandArgs
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log(`✅ Agent command result:`, data);
+            return data.result || data;
+        }
+        
+        // Handle built-in MCP tools (query_graph, create_entities, etc.)
+        const response = await fetch(`${API_BASE}/api/mcp/tool/${functionName}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

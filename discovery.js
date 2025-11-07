@@ -92,6 +92,68 @@ class AgentDiscovery extends EventEmitter {
   listAgents() {
     return Array.from(this.agents.values());
   }
+
+  /**
+   * Send a command to a specific agent via STDIO
+   * @param {string} name - Agent name
+   * @param {string} command - Command to execute
+   * @param {object} args - Command arguments
+   * @returns {Promise<any>} - Command result
+   */
+  async sendCommand(name, command, args = {}) {
+    return new Promise((resolve, reject) => {
+      const process = this.processes.get(name);
+      const agent = this.agents.get(name);
+
+      if (!process || !agent) {
+        return reject(new Error(`Agent "${name}" not found or not running`));
+      }
+
+      if (agent.status !== 'online') {
+        return reject(new Error(`Agent "${name}" is not online (status: ${agent.status})`));
+      }
+
+      const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const request = {
+        type: 'command',
+        id: requestId,
+        command,
+        args,
+        timestamp: new Date().toISOString()
+      };
+
+      // Set up timeout
+      const timeout = setTimeout(() => {
+        listener.off('agent-message', responseHandler);
+        reject(new Error(`Command timeout for agent "${name}"`));
+      }, 30000); // 30s timeout
+
+      // Listen for response
+      const listener = this;
+      const responseHandler = ({ name: respName, msg }) => {
+        if (respName === name && msg.type === 'response' && msg.requestId === requestId) {
+          clearTimeout(timeout);
+          listener.off('agent-message', responseHandler);
+          if (msg.error) {
+            reject(new Error(msg.error));
+          } else {
+            resolve(msg.result);
+          }
+        }
+      };
+
+      this.on('agent-message', responseHandler);
+
+      // Send command to agent's stdin
+      try {
+        process.stdin.write(JSON.stringify(request) + '\n');
+      } catch (error) {
+        clearTimeout(timeout);
+        this.off('agent-message', responseHandler);
+        reject(new Error(`Failed to send command to agent: ${error.message}`));
+      }
+    });
+  }
 }
 
 module.exports = { AgentDiscovery };
