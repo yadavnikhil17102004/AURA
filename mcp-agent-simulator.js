@@ -29,7 +29,33 @@ function handleRequest(msg) {
   if (!msg || typeof msg !== 'object') {
     return { error: 'Invalid message format' };
   }
-  const { id, method, params } = msg;
+  
+  const { id, type, command, method, params, args, requestId } = msg;
+  
+  // Handle new command protocol
+  if (type === 'command') {
+    switch (command) {
+      case 'ping':
+        return { type: 'response', requestId: id || requestId, result: 'pong' };
+      case 'echo':
+        return { type: 'response', requestId: id || requestId, result: args?.text || params?.text || '' };
+      case 'getTools':
+        return { type: 'response', requestId: id || requestId, result: handshake.tools };
+      case 'search':
+        return { 
+          type: 'response', 
+          requestId: id || requestId, 
+          result: { 
+            query: args?.query || '',
+            results: ['Sample result 1', 'Sample result 2']
+          }
+        };
+      default:
+        return { type: 'response', requestId: id || requestId, error: `Unknown command: ${command}` };
+    }
+  }
+  
+  // Handle old method protocol (backwards compatibility)
   switch (method) {
     case 'ping':
       return { id, result: 'pong' };
