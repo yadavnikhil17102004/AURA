@@ -1,99 +1,307 @@
-# 🤖 Simple ChatBot - OpenRouter
+# ✨ AURA - Advanced Universal Reasoning Assistant
 
-A beautiful, modern, and user-friendly chatbot interface that connects to the OpenRouter API. This project provides a complete chat experience with real-time messaging, error handling, and a responsive design.
+> **Where Intelligence Meets Innovation** 🚀
 
-## ✨ Features
+AURA isn't just another chatbot. It's a next-generation AI assistant that bridges the gap between conversational AI and structured knowledge management through cutting-edge **Model Context Protocol (MCP)** integration.
 
-- **Modern UI**: Clean, responsive design with smooth animations
-- **OpenRouter Integration**: Uses OpenRouter API to access multiple AI models
-- **Real-time Chat**: Instant messaging with typing indicators
-- **Error Handling**: Comprehensive error management with user-friendly messages
-- **API Key Management**: Secure local storage of API keys
-- **Keyboard Shortcuts**: Enhanced user experience with hotkeys
-- **Export Functionality**: Download chat history as JSON
-- **Mobile Responsive**: Works perfectly on all device sizes
-- **Conversation Memory**: Maintains context within the chat session
+---
 
-## 🚀 Quick Start
+## 🎯 What Makes AURA Extraordinary
 
-### Prerequisites
+### 🧠 **Dual-Brain Architecture**
+AURA operates on two levels simultaneously:
+- **Conversational Intelligence**: Powered by Google's Gemini 2.5 Flash for lightning-fast, contextual responses
+- **Knowledge Graph Memory**: Real-time MCP integration that maintains a persistent, queryable memory structure
 
-1. **OpenRouter API Key**: You'll need an API key from [OpenRouter](https://openrouter.ai/keys)
+### 🐳 **Docker-Native MCP Integration**
+Unlike other assistants, AURA automatically detects and connects to Docker-based MCP servers running on your machine. It's not simulated—it's the real deal.
 
-### Installation
+- **Auto-Discovery**: Scans your Docker environment for MCP images
+- **Live Bridge**: Node.js-powered bridge connects browser to Docker daemon
+- **Zero Configuration**: If you have Docker MCP servers, AURA finds them
 
-1. **Clone or download** this project to your local machine
-2. **Open** the `index.html` file in your web browser
-3. **Enter your OpenRouter API key** in the input field and click "Save"
-4. **Start chatting** with the AI!
+### 🔐 **Security-First Design**
+- Environment-based secrets management (`.env` files, never committed)
+- Server-side configuration endpoint prevents API key exposure
+- Clean separation between public and private data
 
-That's it! No build process or server setup required.
+### ⚡ **Instant Deployment**
+One command. That's all:
+```bash
+python start.py
+```
+The Python orchestrator handles everything:
+- Launches the web interface
+- Spins up the MCP bridge server
+- Serves secure configuration
+- Manages all processes
 
-## 📋 Detailed Setup Guide
+---
 
-### Step 1: Get Your OpenRouter API Key
+## 🌟 Core Capabilities
 
-1. Visit [OpenRouter.ai](https://openrouter.ai)
-2. Create an account or sign in
-3. Navigate to the API Keys section
-4. Generate a new API key
-5. Copy the key (it starts with `sk-or-...`)
+### 💬 **Intelligent Conversations**
+- Multi-turn context retention
+- Streaming responses with typing indicators
+- Support for multiple AI providers (OpenRouter, Google AI)
+- Markdown-rich formatting
 
-### Step 2: Configure the Chatbot
+### 🕸️ **Knowledge Graph Operations**
+Through MCP integration, AURA can:
+- Create and manage **entities** (people, concepts, projects)
+- Define **relationships** between entities
+- Store **observations** for historical context
+- Query the graph for complex insights
 
-1. **Open the chatbot**: Double-click on `index.html` to open in your browser
-2. **Enter API key**: Paste your API key in the "Enter your OpenRouter API key here..." field
-3. **Save**: Click the "Save" button
-4. **Verify**: The input field should show dots (•••) and turn green, indicating success
+### 🎨 **Beautiful User Experience**
+- Glassmorphic UI with smooth animations
+- Dark mode optimized design
+- Fully responsive (desktop, tablet, mobile)
+- Keyboard shortcuts for power users
 
-### Step 3: Start Chatting
+### � **Data Portability**
+- Export conversations as JSON
+- MCP graph data export
+- Import historical context
 
-1. **Type your message** in the text area at the bottom
-2. **Send**: Press Enter or click the Send button
-3. **Wait**: The AI will respond with a typing indicator
-4. **Continue**: Ask follow-up questions to maintain conversation context
+---
 
-## 🎯 Usage
+## 🛠️ Technical Excellence
 
-### Basic Chatting
+### **Multi-Provider AI Support**
+```javascript
+// Seamlessly switch between providers
+API_PROVIDER=google          // Google Gemini
+API_PROVIDER=openrouter      // 200+ models via OpenRouter
+```
 
-- Type your message in the text area
-- Press `Enter` to send (or `Shift+Enter` for new lines)
-- The AI will respond based on your input
-- Conversation history is maintained during the session
+### **MCP Protocol Implementation**
+- Full stdio-based MCP communication
+- Docker container orchestration
+- Fallback simulation mode
+- Real-time status monitoring
+
+### **Modern Stack**
+- **Frontend**: Vanilla JavaScript (ES6+), no framework bloat
+- **Backend**: Node.js + Express (unified server)
+- **Docker Integration**: Native Docker API via dockerode
+- **Protocol**: Model Context Protocol (MCP)
+
+---
+
+## 🎪 Live Features
 
 ### Keyboard Shortcuts
+- `Ctrl/Cmd + K`: Focus input
+- `Ctrl/Cmd + L`: Clear chat
+- `Ctrl/Cmd + E`: Export conversation
+- `Ctrl/Cmd + M`: Manage MCP
 
-- `Ctrl/Cmd + K`: Focus the message input
-- `Ctrl/Cmd + L`: Clear chat history
-- `Ctrl/Cmd + E`: Export chat as JSON file
+### MCP Operations
+```javascript
+// Create entities
+create_entities({ 
+  name: "Project_X",
+  entityType: "Software",
+  observations: ["Built with MCP", "AI-powered"]
+})
+
+// Define relationships
+create_relations({
+  from: "AURA",
+  to: "Project_X",
+  relationType: "powers"
+})
+
+// Search the graph
+search_nodes({ query: "AI projects" })
+```
+
+---
+
+## 🚀 Quick Launch
+
+### Requirements
+- Node.js 14+ (includes npm)
+- Docker (optional, for real MCP servers)
+
+### Start AURA
+```bash
+# 1. Set your API key
+echo "API_KEY=your_key_here" > .env
+echo "API_PROVIDER=google" >> .env
+echo "DEFAULT_MODEL=gemini-2.5-flash" >> .env
+
+# 2. Install dependencies
+npm install
+
+# 3. Launch
+npm start
+```
+
+### Open your browser
+Navigate to `http://localhost:8000` and experience the future of AI assistants.
+
+---
+
+## 🧬 Architecture Highlights
+
+```
+┌─────────────────────────────────────────┐
+│           Browser (Frontend)            │
+│  ┌─────────────────────────────────┐   │
+│  │    AURA Chat Interface          │   │
+│  │  • Conversation UI              │   │
+│  │  • MCP Client                   │   │
+│  └─────────────────────────────────┘   │
+└─────────────┬───────────────────────────┘
+              │ HTTP / REST API
+              ↓
+┌─────────────────────────────────────────┐
+│       server.js (Node.js/Express)       │
+│  • Static file serving                  │
+│  • /api/config endpoint                 │
+│  • /api/mcp/* MCP Docker bridge         │
+│  • Unified service orchestration        │
+└─────────────┬───────────────────────────┘
+              │ Docker API
+              ↓
+┌─────────────────────────────────────────┐
+│          Docker Daemon                  │
+│  • MCP Containers                       │
+│  • Knowledge Graph Storage              │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## 🎓 Innovation Stack
+
+- **MCP Protocol**: Industry-standard knowledge graph protocol
+- **Docker Integration**: Native container orchestration
+- **Hybrid Architecture**: Client-side UI + Server-side security
+- **Auto-Configuration**: Zero-touch MCP server discovery
+- **Graceful Degradation**: Simulation mode when Docker unavailable
+
+---
+
+## 📈 Use Cases
+
+### Personal Knowledge Management
+Build a persistent memory system that grows with every conversation.
+
+### Research Assistant
+Connect AURA to domain-specific MCP servers for specialized knowledge.
+
+### Development Companion
+Integrate with code repositories, documentation, and project management tools via MCP.
+
+### Creative Projects
+Maintain context across brainstorming sessions with the knowledge graph.
+
+---
+
+## 🔮 Future Vision
+
+AURA is designed to evolve:
+- **Multi-MCP Support**: Connect to multiple knowledge sources simultaneously
+- **Custom Plugins**: Extend functionality with JavaScript tools
+- **Voice Interface**: Hands-free interaction
+- **Collaborative Graphs**: Shared knowledge spaces
+
+---
+
+## 💎 Why AURA?
+
+Because you deserve an AI assistant that:
+- ✅ **Remembers** through persistent knowledge graphs
+- ✅ **Adapts** with multi-provider AI support
+- ✅ **Integrates** natively with your Docker environment
+- ✅ **Protects** your data with security-first architecture
+- ✅ **Scales** from simple chat to complex knowledge management
+
+---
+
+<div align="center">
+
+**Built with 🧠 Intelligence • 🔐 Security • 🚀 Performance**
+
+*AURA: Your thoughts, amplified.*
+
+</div>
+- `google/gemini-pro` - Google's Gemini
+- `meta-llama/llama-2-70b-chat` - Meta's Llama
+- `tngtech/deepseek-r1t2-chimera:free` - High performance free model
+
+## 🔌 MCP Integration
+
+### What is MCP?
+
+The **Model Context Protocol (MCP)** is an open standard for AI applications to interact with external systems and data sources. AURA includes full MCP support for knowledge graph management.
 
 ### Features
 
-- **Auto-save**: Your API key is saved locally in your browser
-- **Export**: Download conversation history as JSON
-- **Clear Chat**: Reset the conversation
-- **Responsive**: Works on desktop, tablet, and mobile
+- **Docker Integration**: Connect to Docker-based MCP servers
+- **Knowledge Graph**: Store and query entities, relations, and observations
+- **Dual Mode**: Works with Docker or in simulation mode
+- **Full Tool Support**: Access all MCP server capabilities
 
-## 🛠️ Configuration
+### Quick Start
 
-### Available Models
+1. **Configure MCP**: Edit `mcp-config.json` with your MCP server details
+2. **Launch AURA**: Open `index.html` in your browser
+3. **Click "🔧 Manage MCP"**: Configure the knowledge graph
+4. **Use MCP Tools**: Access all MCP capabilities through the chat interface
 
-The chatbot is configured to use `anthropic/claude-3-haiku` by default. You can modify this in the `script.js` file:
+### Available MCP Tools
 
-```javascript
-// OpenRouter API configuration
-const DEFAULT_MODEL = 'anthropic/claude-3-haiku'; // Change this to your preferred model
+- `create_entities` - Create knowledge entities
+- `read_graph` - View the knowledge graph
+- `create_relations` - Link entities together
+- `add_observations` - Add facts and observations
+- `query_graph` - Search the graph
+- `delete_entities` - Remove entities
+- `update_entities` - Modify entity properties
+- `list_resources` - View all resources
+- `get_resource` - Retrieve specific resource
+
+### MCP Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd/Ctrl + M` | Manage MCP & Configure Graph |
+| `Cmd/Ctrl + G` | View MCP Graph Data |
+| `Cmd/Ctrl + S` | Get MCP Statistics |
+
+### MCP Configuration
+
+Edit `mcp-config.json`:
+
+```json
+{
+  "servers": {
+    "MCP_DOCKER": {
+      "command": "docker",
+      "args": ["mcp", "gateway", "run"],
+      "type": "stdio"
+    }
+  }
+}
 ```
 
-### Popular OpenRouter Models
+### Using MCP with Docker
 
-- `anthropic/claude-3-haiku` - Fast and efficient
-- `anthropic/claude-3-sonnet` - Balanced performance
-- `anthropic/claude-3-opus` - Most capable
-- `openai/gpt-4` - OpenAI's GPT-4
-- `google/gemini-pro` - Google's Gemini
-- `meta-llama/llama-2-70b-chat` - Meta's Llama
+```bash
+# Ensure Docker is running
+docker ps
+
+# Pull the latest MCP gateway
+docker pull mcpserver/gateway:latest
+
+# AURA will automatically connect!
+```
+
+For detailed MCP documentation, see [MCP_INTEGRATION.md](./MCP_INTEGRATION.md)
 
 Visit [OpenRouter Models](https://openrouter.ai/models) for the complete list.
 

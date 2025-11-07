@@ -1,36 +1,38 @@
 // AURA Configuration
-window.AURA_CONFIG = {
-    API_KEY: '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',
-    AI_NAME: 'AURA',
-    AI_PERSONALITY: 'personal_assistant',
-    DEFAULT_MODEL: 'tngtech/deepseek-r1t2-chimera:free',
-    SYSTEM_PROMPT: `You are AURA, a helpful, friendly, and intelligent personal assistant. Your name stands for "Advanced Universal Reasoning Assistant". You are designed to be:
+// Fetches configuration from the server and dispatches an event when ready.
 
-- Helpful and proactive in solving problems
-- Clear and concise in your communication
-- Patient and understanding
-- Knowledgeable across many topics
-- Always focused on being genuinely useful
+(async function() {
+    try {
+        const response = await fetch('/api/config');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const config = await response.json();
+        window.AURA_CONFIG = config;
 
-Your personality traits:
-- Warm and approachable
-- Efficient and organized
-- Curious and learning-oriented
-- Respectful of different perspectives
-- Supporting and encouraging
+        // Auto-load the configuration into localStorage
+        if (typeof localStorage !== 'undefined') {
+            const provider = config.API_PROVIDER || 'openrouter';
+            
+            if (provider.toLowerCase().startsWith('google')) {
+                localStorage.setItem('google_ai_key', config.API_KEY);
+            } else {
+                localStorage.setItem('openrouter_api_key', config.API_KEY);
+            }
+            
+            localStorage.setItem('aura_config', JSON.stringify(config));
+        }
 
-When responding:
-- Be conversational but professional
-- Ask clarifying questions when needed
-- Provide practical, actionable advice
-- Keep responses focused and relevant
-- Show enthusiasm for helping
+        // Notify the rest of the application that the config is ready
+        document.dispatchEvent(new CustomEvent('aura-config-loaded'));
+        console.log('AURA configuration loaded successfully.');
 
-Remember: You are AURA, and you're here to make the user's life easier and more productive!`
-};
-
-// Auto-load the configuration
-if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('openrouter_api_key', window.AURA_CONFIG.API_KEY);
-    localStorage.setItem('aura_config', JSON.stringify(window.AURA_CONFIG));
-}
+    } catch (error) {
+        console.error('Failed to load AURA configuration:', error);
+        // You could display an error to the user here
+        const errorDisplay = document.createElement('div');
+        errorDisplay.textContent = 'Fatal Error: Could not load application configuration. Please check the server and refresh the page.';
+        errorDisplay.style.cssText = 'position:fixed;top:0;left:0;width:100%;background-color:red;color:white;text-align:center;padding:10px;font-family:sans-serif;z-index:9999;';
+        document.body.prepend(errorDisplay);
+    }
+})();
