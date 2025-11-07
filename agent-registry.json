@@ -1,0 +1,20 @@
+{
+  "agents": {
+    "DockerMCP": {
+      "command": "docker",
+      "args": ["mcp", "gateway", "run"],
+      "type": "stdio",
+      "autoStart": false,
+      "description": "MCP via Docker gateway (stdio bridge)",
+      "env": {}
+    },
+    "LocalSimulator": {
+      "command": "node",
+      "args": ["mcp-agent-simulator.js"],
+      "type": "stdio",
+      "autoStart": true,
+      "description": "Local MCP-like simulator agent",
+      "env": {}
+    }
+  }
+}
