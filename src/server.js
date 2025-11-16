@@ -29,7 +29,7 @@ const docker = new Docker();
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname, '../public')));
 
 // ==================== Persistent Memory ====================
 const GRAPH_DATA_PATH = path.join(__dirname, 'graph-data.json');
@@ -76,7 +76,7 @@ app.get('/api/agents', (req, res) => {
     }
 });
 
-// Get all available tools for Gemini (built-in + agent tools)
+// Get all available tools (built-in + agent tools)
 app.get('/api/tools', (req, res) => {
     try {
         const tools = [];
@@ -225,9 +225,14 @@ app.post('/api/agents/:id/command', async (req, res) => {
 
 app.get('/api/config', (req, res) => {
     const config = {
-        API_KEY: process.env.API_KEY || '',
-        API_PROVIDER: process.env.API_PROVIDER || 'google',
-        DEFAULT_MODEL: process.env.DEFAULT_MODEL || 'gemini-2.5-flash',
+        API_KEY: process.env.API_KEY || process.env.AZURE_OAI_KEY || '',
+        API_PROVIDER: process.env.API_PROVIDER || 'azure',
+        DEFAULT_MODEL: process.env.DEFAULT_MODEL || process.env.AZURE_OAI_MODEL || 'gpt-4o',
+        AZURE_OAI_ENDPOINT: process.env.AZURE_OAI_ENDPOINT || '',
+        AZURE_OAI_KEY: process.env.AZURE_OAI_KEY || '',
+        AZURE_OAI_MODEL: process.env.AZURE_OAI_MODEL || process.env.DEFAULT_MODEL || 'gpt-4o',
+        AZURE_OAI_VERSION: process.env.AZURE_OAI_VERSION || '',
+        AZURE_OAI_REGION: process.env.AZURE_OAI_REGION || '',
         AI_NAME: process.env.AI_NAME || 'AURA',
         AI_PERSONALITY: process.env.AI_PERSONALITY || 'personal_assistant',
         SYSTEM_PROMPT: process.env.SYSTEM_PROMPT || `You are AURA, a helpful, friendly, and intelligent personal assistant. Your name stands for "Advanced Universal Reasoning Assistant". You are designed to be:
@@ -651,8 +656,8 @@ app.listen(PORT, () => {
     console.log('🚀 ========================================\n');
     console.log(`📡 Server running at: http://localhost:${PORT}`);
     console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🤖 AI Provider: ${process.env.API_PROVIDER || 'google'}`);
-    console.log(`🧠 Model: ${process.env.DEFAULT_MODEL || 'gemini-2.5-flash'}`);
+    console.log(`🤖 AI Provider: ${process.env.API_PROVIDER || 'azure'}`);
+    console.log(`🧠 Model: ${process.env.AZURE_OAI_MODEL || 'gpt-4o'}`);
     console.log('\n📋 Available Endpoints:');
     console.log('   • GET  /                       - AURA Web Interface');
     console.log('   • GET  /api/config             - Configuration');

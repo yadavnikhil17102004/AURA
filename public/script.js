@@ -7,10 +7,9 @@ const errorMessage = document.getElementById('errorMessage');
 const errorText = document.getElementById('errorText');
 const closeError = document.getElementById('closeError');
 
-// OpenRouter API configuration (or Google AI)
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const GOOGLE_AI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-let DEFAULT_MODEL = 'anthropic/claude-3-haiku';
+// OpenRouter API configuration (or Azure OpenAI or Local LLM)
+let OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+let DEFAULT_MODEL = 'gpt-4o';
 let AURA_CONFIG = null;
 
 // Chat state
@@ -32,6 +31,12 @@ function initializeAURA() {
     if (window.AURA_CONFIG) {
         AURA_CONFIG = window.AURA_CONFIG;
         DEFAULT_MODEL = AURA_CONFIG.DEFAULT_MODEL || DEFAULT_MODEL;
+        
+        // Update OpenRouter URL if custom base URL provided (for local LLMs)
+        if (AURA_CONFIG.OPENAI_BASE_URL && AURA_CONFIG.API_PROVIDER === 'openai') {
+            OPENROUTER_API_URL = AURA_CONFIG.OPENAI_BASE_URL + '/chat/completions';
+            console.log(`🔧 Using custom LLM endpoint: ${OPENROUTER_API_URL}`);
+        }
     }
     
     // Initialize MCP system
@@ -100,10 +105,13 @@ function showAuraCapabilities() {
     scrollToBottom();
 }
 
-// Send message to API (OpenRouter or Google AI)
+// Send message to API (OpenRouter or Azure OpenAI)
 async function sendMessage() {
     const message = messageInput.value.trim();
-    const apiKey = localStorage.getItem('openrouter_api_key') || localStorage.getItem('google_ai_key');
+    const apiProvider = (AURA_CONFIG?.API_PROVIDER || 'openrouter').toLowerCase();
+    const apiKey = apiProvider === 'azure'
+        ? (localStorage.getItem('azure_oai_key') || AURA_CONFIG?.AZURE_OAI_KEY || null)
+        : (localStorage.getItem('openrouter_api_key') || AURA_CONFIG?.API_KEY || null);
     
     if (!message) return;
     
@@ -123,10 +131,8 @@ async function sendMessage() {
     showLoading();
     
     try {
-        const apiProvider = AURA_CONFIG?.API_PROVIDER || 'openrouter';
-        
-        if (apiProvider.toLowerCase().startsWith('google')) {
-            await sendMessageToGoogleAI(message, apiKey);
+        if (apiProvider === 'azure') {
+            await sendMessageToAzureOAI(message, apiKey);
         } else {
             await sendMessageToOpenRouter(message, apiKey);
         }
@@ -341,55 +347,37 @@ function getStaticToolDeclarations() {
     }];
 }
 
-// Send message to Google AI API
-async function sendMessageToGoogleAI(message, apiKey) {
-    const systemPrompt = AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.';
+
+
+// Send message to OpenRouter API
+async function sendMessageToOpenRouter(message, apiKey) {
+    // Prepare conversation history for API
+    const messages = [
+        {
+            role: 'system',
+            content: AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.'
+        },
+        ...conversationHistory,
+        {
+            role: 'user',
+            content: message
+        }
+    ];
     
-    // Fetch dynamic tools (includes built-in + MCP agents)
-    const tools = await fetchAvailableTools();
-    
-    // Prepare conversation history for Google AI
-    const formattedMessages = [];
-    
-    // Add system message as first user message
-    formattedMessages.push({
-        role: 'user',
-        parts: [{ text: systemPrompt }]
-    });
-    
-    formattedMessages.push({
-        role: 'model',
-        parts: [{ text: 'I understand. I am AURA, your personal assistant. How can I help you today?' }]
-    });
-    
-    // Add conversation history
-    for (const msg of conversationHistory) {
-        formattedMessages.push({
-            role: msg.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: msg.content }]
-        });
-    }
-    
-    // Add current message
-    formattedMessages.push({
-        role: 'user',
-        parts: [{ text: message }]
-    });
-    
-    // Make initial API call with tools
-    const response = await fetch(`${GOOGLE_AI_URL}/${DEFAULT_MODEL}:generateContent?key=${apiKey}`, {
+    // Make API call to OpenRouter
+    const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': window.location.origin,
+            'X-Title': 'AURA - Personal AI Assistant'
         },
         body: JSON.stringify({
-            contents: formattedMessages,
-            tools: tools,
-            generationConfig: {
-                maxOutputTokens: 1000,
-                temperature: 0.7,
-                topP: 0.95
-            }
+            model: DEFAULT_MODEL,
+            messages: messages,
+            max_tokens: 1000,
+            temperature: 0.7
         })
     });
     
@@ -400,79 +388,31 @@ async function sendMessageToGoogleAI(message, apiKey) {
     
     const data = await response.json();
     
-    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-        const candidate = data.candidates[0];
-        const content = candidate.content;
+    if (data.choices && data.choices[0] && data.choices[0].message) {
+        const botResponse = data.choices[0].message.content;
         
-        // Check if the model wants to call a function
-        if (content.parts && content.parts[0].functionCall) {
-            const functionCall = content.parts[0].functionCall;
-            console.log('🔧 Function call requested:', functionCall.name, functionCall.args);
-            
-            // Execute the function
-            const functionResult = await executeMCPFunction(functionCall.name, functionCall.args);
-            
-            // Add function call and result to conversation
-            formattedMessages.push({
-                role: 'model',
-                parts: [{ functionCall: functionCall }]
-            });
-            
-            formattedMessages.push({
-                role: 'user',
-                parts: [{
-                    functionResponse: {
-                        name: functionCall.name,
-                        response: functionResult
-                    }
+        // Add bot response to chat
+        addMessage(botResponse, 'bot');
+        
+        // Update conversation history
+        conversationHistory.push(
+            { role: 'user', content: message },
+            { role: 'assistant', content: botResponse }
+        );
+        
+        // Add observation to MCP server
+        try {
+            await use_mcp_tool('MCP_DOCKER', 'add_observations', {
+                observations: [{
+                    entityName: 'ChatBot',
+                    contents: [
+                        `User: ${message}`,
+                        `AURA: ${botResponse}`
+                    ]
                 }]
             });
-            
-            // Make another call to get the final response with function results
-            const secondResponse = await fetch(`${GOOGLE_AI_URL}/${DEFAULT_MODEL}:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    contents: formattedMessages,
-                    tools: tools,
-                    generationConfig: {
-                        maxOutputTokens: 1000,
-                        temperature: 0.7,
-                        topP: 0.95
-                    }
-                })
-            });
-            
-            if (!secondResponse.ok) {
-                const errorData = await secondResponse.json();
-                throw new Error(errorData.error?.message || `HTTP ${secondResponse.status}: ${secondResponse.statusText}`);
-            }
-            
-            const secondData = await secondResponse.json();
-            const botResponse = secondData.candidates[0].content.parts[0].text;
-            
-            // Add bot response to chat
-            addMessage(botResponse, 'bot');
-            
-            // Update conversation history
-            conversationHistory.push(
-                { role: 'user', content: message },
-                { role: 'assistant', content: botResponse }
-            );
-        } else {
-            // Normal text response
-            const botResponse = content.parts[0].text;
-            
-            // Add bot response to chat
-            addMessage(botResponse, 'bot');
-            
-            // Update conversation history
-            conversationHistory.push(
-                { role: 'user', content: message },
-                { role: 'assistant', content: botResponse }
-            );
+        } catch (mcpError) {
+            console.error('MCP observation failed:', mcpError);
         }
         
         // Keep only last 10 exchanges to manage token usage
@@ -480,7 +420,66 @@ async function sendMessageToGoogleAI(message, apiKey) {
             conversationHistory = conversationHistory.slice(-20);
         }
     } else {
-        throw new Error('Invalid response format from Google AI API');
+        throw new Error('Invalid response format from OpenRouter API');
+    }
+}
+
+// Send message to Azure OpenAI API
+async function sendMessageToAzureOAI(message, apiKey) {
+    const endpointRaw = AURA_CONFIG?.AZURE_OAI_ENDPOINT || '';
+    const deploymentName = AURA_CONFIG?.AZURE_OAI_MODEL || AURA_CONFIG?.DEFAULT_MODEL || 'gpt-4o';
+    const apiVersion = AURA_CONFIG?.AZURE_OAI_VERSION || '2024-06-01';
+
+    if (!endpointRaw) {
+        throw new Error('Azure OpenAI endpoint is not configured.');
+    }
+
+    const endpoint = endpointRaw.endsWith('/') ? endpointRaw.slice(0, -1) : endpointRaw;
+    const apiUrl = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+
+    const messages = [
+        {
+            role: 'system',
+            content: AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.'
+        },
+        ...conversationHistory,
+        {
+            role: 'user',
+            content: message
+        }
+    ];
+
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'api-key': apiKey
+        },
+        body: JSON.stringify({
+            messages: messages,
+            max_tokens: 1000,
+            temperature: 0.7
+        })
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    if (data.choices && data.choices[0] && data.choices[0].message) {
+        const botResponse = data.choices[0].message.content;
+
+        addMessage(botResponse, 'bot');
+
+        conversationHistory.push(
+            { role: 'user', content: message },
+            { role: 'assistant', content: botResponse }
+        );
+    } else {
+        throw new Error('Invalid response format from Azure OpenAI API');
     }
 }
 

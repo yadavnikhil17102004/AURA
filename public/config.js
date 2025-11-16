@@ -12,14 +12,28 @@
 
         // Auto-load the configuration into localStorage
         if (typeof localStorage !== 'undefined') {
-            const provider = config.API_PROVIDER || 'openrouter';
-            
-            if (provider.toLowerCase().startsWith('google')) {
-                localStorage.setItem('google_ai_key', config.API_KEY);
+            const provider = (config.API_PROVIDER || 'openrouter').toLowerCase();
+
+            if (provider === 'azure') {
+                if (config.AZURE_OAI_KEY) {
+                    localStorage.setItem('azure_oai_key', config.AZURE_OAI_KEY);
+                }
+                localStorage.removeItem('google_ai_key');
+                localStorage.removeItem('openrouter_api_key');
+            } else if (provider.startsWith('google')) {
+                if (config.API_KEY) {
+                    localStorage.setItem('google_ai_key', config.API_KEY);
+                }
+                localStorage.removeItem('azure_oai_key');
+                localStorage.removeItem('openrouter_api_key');
             } else {
-                localStorage.setItem('openrouter_api_key', config.API_KEY);
+                if (config.API_KEY) {
+                    localStorage.setItem('openrouter_api_key', config.API_KEY);
+                }
+                localStorage.removeItem('google_ai_key');
+                // Keep azure key untouched so user can switch back without reloading if desired
             }
-            
+
             localStorage.setItem('aura_config', JSON.stringify(config));
         }
 
