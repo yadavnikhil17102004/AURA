@@ -6,6 +6,9 @@ const loading = document.getElementById('loading');
 const errorMessage = document.getElementById('errorMessage');
 const errorText = document.getElementById('errorText');
 const closeError = document.getElementById('closeError');
+const backgroundActivity = document.getElementById('backgroundActivity');
+const activityList = document.getElementById('activityList');
+const clearActivityButton = document.getElementById('clearActivity');
 
 // OpenRouter API configuration (or Azure OpenAI or Local LLM)
 let OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -14,6 +17,226 @@ let AURA_CONFIG = null;
 
 // Chat state
 let conversationHistory = [];
+
+// Background activity state
+const activityEntries = new Map();
+let activityCounter = 0;
+const MAX_ACTIVITY_ENTRIES = 12;
+
+// Conversation helpers
+function buildModelMessages() {
+    return [
+        {
+            role: 'system',
+            content: AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.'
+        },
+        ...conversationHistory
+    ];
+}
+
+function normalizeContent(content) {
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content
+            .map(part => {
+                if (typeof part === 'string') return part;
+                if (part && typeof part === 'object') {
+                    if (typeof part.text === 'string') return part.text;
+                    if (part.type === 'text' && typeof part.value === 'string') return part.value;
+                }
+                return '';
+            })
+            .join('');
+    }
+    if (typeof content === 'object') {
+        if (typeof content.text === 'string') {
+            return content.text;
+        }
+        try {
+            return JSON.stringify(content, null, 2);
+        } catch (error) {
+            return String(content);
+        }
+    }
+    return String(content);
+}
+
+function trimConversationHistory(maxMessages = 30) {
+    if (conversationHistory.length > maxMessages) {
+        conversationHistory = conversationHistory.slice(-maxMessages);
+    }
+}
+
+function ensureActivityPanelState() {
+    if (!backgroundActivity || !activityList) {
+        return;
+    }
+
+    if (activityList.children.length > 0) {
+        backgroundActivity.classList.add('active');
+        backgroundActivity.classList.remove('hidden');
+    } else {
+        backgroundActivity.classList.add('hidden');
+        backgroundActivity.classList.remove('active');
+    }
+}
+
+function truncateForDisplay(value, maxLength = 220) {
+    if (!value) return '';
+    return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
+function formatAsReadable(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch (error) {
+        return String(value);
+    }
+}
+
+function summarizeArgs(args) {
+    if (!args || typeof args !== 'object' || Object.keys(args).length === 0) {
+        return 'No arguments provided.';
+    }
+    return truncateForDisplay(formatAsReadable(args), 260);
+}
+
+function summarizeResultForActivity(result) {
+    if (result === undefined || result === null) {
+        return 'Tool completed with no data returned.';
+    }
+    if (typeof result === 'string') {
+        return truncateForDisplay(result, 260);
+    }
+    return truncateForDisplay(formatAsReadable(result), 260);
+}
+
+function createActivityEntry(label, detail = '', status = 'pending') {
+    if (!backgroundActivity || !activityList) {
+        return null;
+    }
+
+    const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : 'pending';
+    const entryId = `activity-${Date.now()}-${activityCounter++}`;
+    const item = document.createElement('li');
+    item.className = 'activity-item';
+    item.dataset.activityId = entryId;
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `activity-status status-${normalizedStatus}`;
+    statusBadge.textContent = normalizedStatus;
+
+    const content = document.createElement('div');
+    content.className = 'activity-content';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'activity-label';
+    labelSpan.textContent = label;
+    content.appendChild(labelSpan);
+
+    const detailDiv = document.createElement('div');
+    detailDiv.className = 'activity-detail';
+    if (detail) {
+        detailDiv.textContent = detail;
+    } else {
+        detailDiv.style.display = 'none';
+    }
+    content.appendChild(detailDiv);
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'activity-meta';
+    metaDiv.style.display = 'none';
+    content.appendChild(metaDiv);
+
+    item.appendChild(statusBadge);
+    item.appendChild(content);
+
+    activityList.prepend(item);
+
+    activityEntries.set(entryId, {
+        element: item,
+        statusBadge,
+        detailDiv,
+        metaDiv,
+        labelSpan
+    });
+
+    trimActivityEntries();
+    ensureActivityPanelState();
+
+    return entryId;
+}
+
+function updateActivityEntry(id, status, detail) {
+    if (!id) return;
+    const entry = activityEntries.get(id);
+    if (!entry) return;
+
+    if (status) {
+        const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : 'pending';
+        entry.statusBadge.textContent = normalizedStatus;
+        entry.statusBadge.className = `activity-status status-${normalizedStatus}`;
+    }
+
+    if (detail !== undefined) {
+        if (detail) {
+            entry.detailDiv.textContent = detail;
+            entry.detailDiv.style.display = 'block';
+        } else {
+            entry.detailDiv.textContent = '';
+            entry.detailDiv.style.display = 'none';
+        }
+    }
+}
+
+function setActivityMeta(id, meta) {
+    if (!id) return;
+    const entry = activityEntries.get(id);
+    if (!entry) return;
+
+    if (meta) {
+        entry.metaDiv.textContent = meta;
+        entry.metaDiv.style.display = 'block';
+    } else {
+        entry.metaDiv.textContent = '';
+        entry.metaDiv.style.display = 'none';
+    }
+}
+
+function markActivityComplete(id) {
+    if (!id) return;
+    const entry = activityEntries.get(id);
+    if (entry) {
+        entry.element.classList.add('activity-completed');
+    }
+}
+
+function clearActivityEntries() {
+    activityEntries.clear();
+    if (activityList) {
+        activityList.innerHTML = '';
+    }
+    ensureActivityPanelState();
+}
+
+function trimActivityEntries() {
+    if (!activityList) return;
+    while (activityList.children.length > MAX_ACTIVITY_ENTRIES) {
+        const last = activityList.lastElementChild;
+        if (!last) {
+            break;
+        }
+        const lastId = last.dataset.activityId;
+        if (lastId) {
+            activityEntries.delete(lastId);
+        }
+        activityList.removeChild(last);
+    }
+}
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -48,6 +271,7 @@ function initializeAURA() {
     });
     
     setupEventListeners();
+    ensureActivityPanelState();
     scrollToBottom();
     console.log('✨ AURA initialized successfully!');
 }
@@ -70,6 +294,12 @@ function setupEventListeners() {
     
     // Close error message
     closeError.addEventListener('click', hideError);
+
+    if (clearActivityButton) {
+        clearActivityButton.addEventListener('click', () => {
+            clearActivityEntries();
+        });
+    }
 }
 
 // Auto-resize textarea
@@ -123,6 +353,10 @@ async function sendMessage() {
     // Add user message to chat
     addMessage(message, 'user');
     
+    // Track user message for future model calls
+    conversationHistory.push({ role: 'user', content: message });
+    trimConversationHistory();
+
     // Clear input
     messageInput.value = '';
     autoResizeTextarea();
@@ -158,269 +392,368 @@ async function sendMessage() {
     }
 }
 
-// Global variable to cache tools
+// Global tool cache populated from the server so we can advertise functions to the model
 let cachedTools = null;
 let toolsCacheTime = 0;
 const TOOLS_CACHE_TTL = 30000; // 30 seconds
 
-// Helper: Check if specific agent tool exists
-function hasAgentTool(toolName) {
-    if (!cachedTools || !cachedTools[0] || !cachedTools[0].functionDeclarations) {
-        return false;
-    }
-    return cachedTools[0].functionDeclarations.some(t => t.name === toolName);
-}
-
-// Helper: Get preferred tool for a category
-function getPreferredTool(category) {
-    const preferences = {
-        'search_notes': ['agent_Obsidian_simple_search', 'agent_Obsidian_complex_search', 'query_graph'],
-        'read_file': ['agent_Obsidian_get_file_contents', 'agent_Obsidian_batch_get_file_contents'],
-        'browser': ['agent_Puppeteer_navigate', 'agent_Playwright_navigate'],
-        'web_fetch': ['agent_Fetch_fetch', 'agent_Puppeteer_evaluate']
-    };
-    
-    const candidates = preferences[category] || [];
-    for (const tool of candidates) {
-        if (hasAgentTool(tool)) {
-            return tool;
-        }
-    }
-    return null;
-}
-
 // Fetch all available tools (built-in + MCP agents)
 async function fetchAvailableTools() {
     const now = Date.now();
-    
-    // Return cached tools if still fresh
+
     if (cachedTools && (now - toolsCacheTime) < TOOLS_CACHE_TTL) {
         return cachedTools;
     }
-    
+
     try {
         const API_BASE = window.location.origin;
         const response = await fetch(`${API_BASE}/api/tools`);
-        
+
         if (!response.ok) {
             console.warn('Could not fetch dynamic tools, using static set');
-            return getStaticToolDeclarations();
+            cachedTools = getStaticToolDeclarations();
+            toolsCacheTime = now;
+            return cachedTools;
         }
-        
+
         const data = await response.json();
         const tools = data.tools || [];
-        
+
         console.log(`🔧 Loaded ${tools.length} tools dynamically:`, tools.map(t => t.name));
-        
-        // Convert to Gemini format
-        const functionDeclarations = tools.map(tool => ({
+
+        cachedTools = tools.map(tool => ({
             name: tool.name,
             description: tool.description,
-            parameters: tool.parameters
+            parameters: tool.parameters,
+            source: tool.source || 'unknown',
+            agentId: tool.agentId,
+            agentTool: tool.agentTool
         }));
-        
-        cachedTools = [{ functionDeclarations }];
         toolsCacheTime = now;
-        
         return cachedTools;
     } catch (error) {
         console.error('Error fetching tools:', error);
-        return getStaticToolDeclarations();
+        cachedTools = getStaticToolDeclarations();
+        toolsCacheTime = now;
+        return cachedTools;
     }
 }
 
-// Static tool declarations (fallback)
+// Static tool declarations (fallback) - OpenAI compatible structures
 function getStaticToolDeclarations() {
-    return [{
-        functionDeclarations: [
-            {
-                name: 'query_graph',
-                description: 'Search the knowledge graph for information. Use this when users ask about their notes, files, or stored information.',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        query: {
-                            type: 'string',
-                            description: 'The search query to find in the knowledge graph'
-                        },
-                        entityType: {
-                            type: 'string',
-                            description: 'Optional entity type filter (e.g., "note", "file", "project")'
-                        },
-                        limit: {
-                            type: 'number',
-                            description: 'Maximum number of results to return (default: 50)'
-                        }
+    return [
+        {
+            name: 'query_graph',
+            description: 'Search the knowledge graph for information. Use this when users ask about their notes, files, or stored information.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description: 'The search query to find in the knowledge graph'
                     },
-                    required: ['query']
-                }
-            },
-            {
-                name: 'read_graph',
-                description: 'Read the entire knowledge graph or a portion of it. Use this to see what information is stored.',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        limit: {
-                            type: 'number',
-                            description: 'Maximum number of entities to return (default: 100)'
-                        }
+                    entityType: {
+                        type: 'string',
+                        description: 'Optional entity type filter (e.g., "note", "file", "project")'
+                    },
+                    limit: {
+                        type: 'number',
+                        description: 'Maximum number of results to return (default: 50)'
+                    }
+                },
+                required: ['query']
+            }
+        },
+        {
+            name: 'read_graph',
+            description: 'Read the entire knowledge graph or a portion of it. Use this to see what information is stored.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    limit: {
+                        type: 'number',
+                        description: 'Maximum number of entities to return (default: 100)'
                     }
                 }
-            },
-            {
-                name: 'create_entities',
-                description: 'Create new entities in the knowledge graph. Use this to store new information, notes, or concepts.',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        entities: {
-                            type: 'array',
-                            description: 'Array of entities to create',
-                            items: {
-                                type: 'object',
-                                properties: {
-                                    name: { type: 'string', description: 'Name of the entity' },
-                                    entityType: { type: 'string', description: 'Type of entity (e.g., "note", "concept", "project")' },
-                                    observations: { 
-                                        type: 'array', 
-                                        description: 'Array of observation strings about this entity',
-                                        items: { type: 'string' }
-                                    }
-                                },
-                                required: ['name', 'entityType', 'observations']
-                            }
-                        }
-                    },
-                    required: ['entities']
-                }
-            },
-            {
-                name: 'add_observations',
-                description: 'Add observations or notes to existing entities in the knowledge graph.',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        observations: {
-                            type: 'array',
-                            description: 'Array of observations to add',
-                            items: {
-                                type: 'object',
-                                properties: {
-                                    entityName: { type: 'string', description: 'Name of the entity to add observations to' },
-                                    contents: { 
-                                        type: 'array', 
-                                        description: 'Array of observation content strings',
-                                        items: { type: 'string' }
-                                    }
-                                },
-                                required: ['entityName', 'contents']
-                            }
-                        }
-                    },
-                    required: ['observations']
-                }
-            },
-            {
-                name: 'agent_command',
-                description: 'Send a command to a discovered agent. Use this to interact with external tools, services, or specialized agents.',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        agentId: {
-                            type: 'string',
-                            description: 'The ID or name of the agent to send the command to'
-                        },
-                        command: {
-                            type: 'string',
-                            description: 'The command to execute on the agent'
-                        },
-                        args: {
-                            type: 'object',
-                            description: 'Arguments for the command'
-                        }
-                    },
-                    required: ['agentId', 'command']
-                }
             }
-        ]
-    }];
+        },
+        {
+            name: 'create_entities',
+            description: 'Create new entities in the knowledge graph. Use this to store new information, notes, or concepts.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    entities: {
+                        type: 'array',
+                        description: 'Array of entities to create',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: { type: 'string', description: 'Name of the entity' },
+                                entityType: { type: 'string', description: 'Type of entity (e.g., "note", "concept", "project")' },
+                                observations: {
+                                    type: 'array',
+                                    description: 'Array of observation strings about this entity',
+                                    items: { type: 'string' }
+                                }
+                            },
+                            required: ['name', 'entityType', 'observations']
+                        }
+                    }
+                },
+                required: ['entities']
+            }
+        },
+        {
+            name: 'add_observations',
+            description: 'Add observations or notes to existing entities in the knowledge graph.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    observations: {
+                        type: 'array',
+                        description: 'Array of observations to add',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                entityName: { type: 'string', description: 'Name of the entity to add observations to' },
+                                contents: {
+                                    type: 'array',
+                                    description: 'Array of observation content strings',
+                                    items: { type: 'string' }
+                                }
+                            },
+                            required: ['entityName', 'contents']
+                        }
+                    }
+                },
+                required: ['observations']
+            }
+        },
+        {
+            name: 'agent_command',
+            description: 'Send a command to a discovered agent. Use this to interact with external tools, services, or specialized agents.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    agentId: {
+                        type: 'string',
+                        description: 'The ID or name of the agent to send the command to'
+                    },
+                    command: {
+                        type: 'string',
+                        description: 'The command to execute on the agent'
+                    },
+                    args: {
+                        type: 'object',
+                        description: 'Arguments for the command'
+                    }
+                },
+                required: ['agentId', 'command']
+            }
+        }
+    ];
+}
+
+// Helper: translate cached tool data to OpenAI/Azure tool definitions
+async function getOpenAIToolDefinitions() {
+    const tools = await fetchAvailableTools();
+    if (!tools || tools.length === 0) {
+        return [];
+    }
+    return tools.map(tool => ({
+        type: 'function',
+        function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters || { type: 'object', properties: {} }
+        }
+    }));
+}
+
+function formatToolResult(functionName, result, error = null) {
+    if (error) {
+        return `⚠️ ${functionName} failed: ${error}`;
+    }
+
+    if (result === undefined || result === null) {
+        return `🔧 ${functionName} returned no data.`;
+    }
+
+    if (typeof result === 'string') {
+        return `🔧 ${functionName} → ${result}`;
+    }
+
+    try {
+        return `🔧 ${functionName} → ${JSON.stringify(result, null, 2)}`;
+    } catch (err) {
+        return `🔧 ${functionName} → ${String(result)}`;
+    }
+}
+
+async function handleAssistantToolExecution(assistantMessage, toolDefinitions, callApiFn) {
+    let currentMessage = assistantMessage;
+
+    while (currentMessage && Array.isArray(currentMessage.tool_calls) && currentMessage.tool_calls.length > 0) {
+        const planContent = normalizeContent(currentMessage.content);
+        if (planContent) {
+            addMessage(planContent, 'bot');
+        }
+
+        conversationHistory.push({
+            role: 'assistant',
+            content: currentMessage.content,
+            tool_calls: currentMessage.tool_calls
+        });
+        trimConversationHistory();
+
+        for (const toolCall of currentMessage.tool_calls) {
+            const functionName = toolCall.function?.name;
+            let parsedArgs = {};
+            try {
+                if (toolCall.function?.arguments) {
+                    parsedArgs = JSON.parse(toolCall.function.arguments);
+                }
+            } catch (err) {
+                console.error(`Failed to parse arguments for ${functionName}:`, err);
+            }
+
+            const toolLabel = functionName || 'unknown_tool';
+            const activityId = createActivityEntry(`Tool • ${toolLabel}`, 'Queued for execution', 'pending');
+            const argsSummary = summarizeArgs(parsedArgs);
+            if (activityId) {
+                setActivityMeta(activityId, argsSummary ? `Args:\n${argsSummary}` : '');
+                updateActivityEntry(activityId, 'running', 'Executing via MCP bridge...');
+            }
+
+            try {
+                const toolResult = await executeMCPFunction(functionName, parsedArgs);
+                if (toolResult && typeof toolResult === 'object' && toolResult.success === false) {
+                    throw new Error(toolResult.error || 'Tool execution reported a failure.');
+                }
+                const displayText = formatToolResult(functionName, toolResult);
+                addMessage(displayText, 'bot');
+
+                if (activityId) {
+                    const resultSummary = summarizeResultForActivity(toolResult);
+                    updateActivityEntry(activityId, 'success', resultSummary || 'Tool completed successfully.');
+                    markActivityComplete(activityId);
+                }
+
+                conversationHistory.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: displayText
+                });
+            } catch (err) {
+                const errorText = formatToolResult(functionName, null, err.message || 'Unknown error');
+                addMessage(errorText, 'bot');
+                if (activityId) {
+                    updateActivityEntry(activityId, 'failed', err?.message || 'Unknown error');
+                    markActivityComplete(activityId);
+                }
+                conversationHistory.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: errorText
+                });
+            }
+
+            trimConversationHistory();
+        }
+
+        const followUpData = await callApiFn(buildModelMessages(), toolDefinitions);
+        currentMessage = followUpData?.choices?.[0]?.message;
+    }
+
+    return currentMessage;
 }
 
 
 
 // Send message to OpenRouter API
 async function sendMessageToOpenRouter(message, apiKey) {
-    // Prepare conversation history for API
-    const messages = [
-        {
-            role: 'system',
-            content: AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.'
-        },
-        ...conversationHistory,
-        {
-            role: 'user',
-            content: message
-        }
-    ];
-    
-    // Make API call to OpenRouter
-    const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': window.location.origin,
-            'X-Title': 'AURA - Personal AI Assistant'
-        },
-        body: JSON.stringify({
+    const toolDefinitions = await getOpenAIToolDefinitions();
+
+    const callApi = async (messages, tools) => {
+        const payload = {
             model: DEFAULT_MODEL,
-            messages: messages,
+            messages,
             max_tokens: 1000,
             temperature: 0.7
-        })
-    });
-    
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-        const botResponse = data.choices[0].message.content;
-        
-        // Add bot response to chat
-        addMessage(botResponse, 'bot');
-        
-        // Update conversation history
-        conversationHistory.push(
-            { role: 'user', content: message },
-            { role: 'assistant', content: botResponse }
-        );
-        
-        // Add observation to MCP server
-        try {
-            await use_mcp_tool('MCP_DOCKER', 'add_observations', {
-                observations: [{
-                    entityName: 'ChatBot',
-                    contents: [
-                        `User: ${message}`,
-                        `AURA: ${botResponse}`
-                    ]
-                }]
-            });
-        } catch (mcpError) {
-            console.error('MCP observation failed:', mcpError);
+        };
+
+        if (tools.length > 0) {
+            payload.tools = tools;
         }
-        
-        // Keep only last 10 exchanges to manage token usage
-        if (conversationHistory.length > 20) {
-            conversationHistory = conversationHistory.slice(-20);
+
+        const response = await fetch(OPENROUTER_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'HTTP-Referer': window.location.origin,
+                'X-Title': 'AURA - Personal AI Assistant'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
         }
-    } else {
+
+        return response.json();
+    };
+
+    let data = await callApi(buildModelMessages(), toolDefinitions);
+    let assistantMessage = data?.choices?.[0]?.message;
+
+    if (!assistantMessage) {
         throw new Error('Invalid response format from OpenRouter API');
+    }
+
+    const finalMessage = await handleAssistantToolExecution(assistantMessage, toolDefinitions, callApi);
+    const finalContent = normalizeContent(finalMessage?.content);
+
+    if (!finalMessage || !finalContent) {
+        throw new Error('Assistant did not return a usable response after tool execution.');
+    }
+
+    addMessage(finalContent, 'bot');
+
+    conversationHistory.push({
+        role: 'assistant',
+        content: finalMessage.content
+    });
+    trimConversationHistory();
+
+    const loggingActivityId = createActivityEntry('MCP • add_observations', 'Queueing conversation log', 'pending');
+    if (loggingActivityId) {
+        setActivityMeta(loggingActivityId, 'Entity: ChatBot');
+        updateActivityEntry(loggingActivityId, 'running', 'Saving chat transcript...');
+    }
+
+    try {
+        await use_mcp_tool('MCP_DOCKER', 'add_observations', {
+            observations: [{
+                entityName: 'ChatBot',
+                contents: [
+                    `User: ${message}`,
+                    `AURA: ${finalContent}`
+                ]
+            }]
+        });
+        if (loggingActivityId) {
+            updateActivityEntry(loggingActivityId, 'success', 'Transcript logged to MCP.');
+            markActivityComplete(loggingActivityId);
+        }
+    } catch (mcpError) {
+        if (loggingActivityId) {
+            updateActivityEntry(loggingActivityId, 'failed', mcpError?.message || 'Failed to log transcript.');
+            markActivityComplete(loggingActivityId);
+        }
+        console.error('MCP observation failed:', mcpError);
     }
 }
 
@@ -437,49 +770,84 @@ async function sendMessageToAzureOAI(message, apiKey) {
     const endpoint = endpointRaw.endsWith('/') ? endpointRaw.slice(0, -1) : endpointRaw;
     const apiUrl = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
 
-    const messages = [
-        {
-            role: 'system',
-            content: AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.'
-        },
-        ...conversationHistory,
-        {
-            role: 'user',
-            content: message
-        }
-    ];
+    const toolDefinitions = await getOpenAIToolDefinitions();
 
-    const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'api-key': apiKey
-        },
-        body: JSON.stringify({
-            messages: messages,
+    const callApi = async (messages, tools) => {
+        const payload = {
+            messages,
             max_tokens: 1000,
             temperature: 0.7
-        })
-    });
+        };
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+        if (tools.length > 0) {
+            payload.tools = tools;
+        }
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'api-key': apiKey
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return response.json();
+    };
+
+    let data = await callApi(buildModelMessages(), toolDefinitions);
+    let assistantMessage = data?.choices?.[0]?.message;
+
+    if (!assistantMessage) {
+        throw new Error('Invalid response format from Azure OpenAI API');
     }
 
-    const data = await response.json();
+    const finalMessage = await handleAssistantToolExecution(assistantMessage, toolDefinitions, callApi);
+    const finalContent = normalizeContent(finalMessage?.content);
 
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-        const botResponse = data.choices[0].message.content;
+    if (!finalMessage || !finalContent) {
+        throw new Error('Assistant did not return a usable response after tool execution.');
+    }
 
-        addMessage(botResponse, 'bot');
+    addMessage(finalContent, 'bot');
 
-        conversationHistory.push(
-            { role: 'user', content: message },
-            { role: 'assistant', content: botResponse }
-        );
-    } else {
-        throw new Error('Invalid response format from Azure OpenAI API');
+    conversationHistory.push({
+        role: 'assistant',
+        content: finalMessage.content
+    });
+    trimConversationHistory();
+
+    const loggingActivityId = createActivityEntry('MCP • add_observations', 'Queueing conversation log', 'pending');
+    if (loggingActivityId) {
+        setActivityMeta(loggingActivityId, 'Entity: ChatBot');
+        updateActivityEntry(loggingActivityId, 'running', 'Saving chat transcript...');
+    }
+
+    try {
+        await use_mcp_tool('MCP_DOCKER', 'add_observations', {
+            observations: [{
+                entityName: 'ChatBot',
+                contents: [
+                    `User: ${message}`,
+                    `AURA: ${finalContent}`
+                ]
+            }]
+        });
+        if (loggingActivityId) {
+            updateActivityEntry(loggingActivityId, 'success', 'Transcript logged to MCP.');
+            markActivityComplete(loggingActivityId);
+        }
+    } catch (mcpError) {
+        if (loggingActivityId) {
+            updateActivityEntry(loggingActivityId, 'failed', mcpError?.message || 'Failed to log transcript.');
+            markActivityComplete(loggingActivityId);
+        }
+        console.error('MCP observation failed:', mcpError);
     }
 }
 
@@ -568,81 +936,6 @@ async function executeMCPFunction(functionName, args) {
             success: false,
             error: error.message
         };
-    }
-}
-
-// Send message to OpenRouter API
-async function sendMessageToOpenRouter(message, apiKey) {
-    // Prepare conversation history for API
-    const messages = [
-        {
-            role: 'system',
-            content: AURA_CONFIG?.SYSTEM_PROMPT || 'You are AURA, a helpful personal AI assistant.'
-        },
-        ...conversationHistory,
-        {
-            role: 'user',
-            content: message
-        }
-    ];
-    
-    // Make API call to OpenRouter
-    const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': window.location.origin,
-            'X-Title': 'AURA - Personal AI Assistant'
-        },
-        body: JSON.stringify({
-            model: DEFAULT_MODEL,
-            messages: messages,
-            max_tokens: 1000,
-            temperature: 0.7
-        })
-    });
-    
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-        const botResponse = data.choices[0].message.content;
-        
-        // Add bot response to chat
-        addMessage(botResponse, 'bot');
-        
-        // Update conversation history
-        conversationHistory.push(
-            { role: 'user', content: message },
-            { role: 'assistant', content: botResponse }
-        );
-        
-        // Add observation to MCP server
-        try {
-            await use_mcp_tool('MCP_DOCKER', 'add_observations', {
-                observations: [{
-                    entityName: 'ChatBot',
-                    contents: [
-                        `User: ${message}`,
-                        `AURA: ${botResponse}`
-                    ]
-                }]
-            });
-        } catch (mcpError) {
-            console.error('MCP observation failed:', mcpError);
-        }
-        
-        // Keep only last 10 exchanges to manage token usage
-        if (conversationHistory.length > 20) {
-            conversationHistory = conversationHistory.slice(-20);
-        }
-    } else {
-        throw new Error('Invalid response format from OpenRouter API');
     }
 }
 

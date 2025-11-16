@@ -24,6 +24,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# MCP memory snapshots
+src/graph-data.json
+
 # Node.js (if you add any Node.js components later)
 node_modules/
 npm-debug.log*
